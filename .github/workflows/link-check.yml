@@ -1,0 +1,36 @@
+name: Hikerfox link check
+on:
+  schedule:
+    - cron: '17 */4 * * *'
+  workflow_dispatch:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: link-check
+  cancel-in-progress: false
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    env:
+      SITE_URL: https://hikerfox.com/
+      MAX_PAGES: '500'
+      MAX_LINKS: '3000'
+      SCAN_SECONDS: '1500'
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - run: pip install -r requirements.txt
+      - run: python -m playwright install --with-deps chromium
+      - run: python check_links.py
+      - name: Downloadable report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: link-report
+          path: reports/
+          retention-days: 2
