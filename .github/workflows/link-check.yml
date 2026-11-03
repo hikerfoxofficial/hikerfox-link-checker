@@ -1,36 +1,69 @@
 name: Hikerfox link check
+
 on:
   schedule:
     - cron: '17 */4 * * *'
   workflow_dispatch:
   push:
     branches: [main]
+
 permissions:
   contents: read
+
 concurrency:
   group: link-check
   cancel-in-progress: false
+
 jobs:
   check:
     runs-on: ubuntu-latest
-    timeout-minutes: 35
+    timeout-minutes: 40
+
     env:
       SITE_URL: https://hikerfox.com/
       MAX_PAGES: '500'
       MAX_LINKS: '3000'
       SCAN_SECONDS: '1500'
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Download repository files
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
         with:
           python-version: '3.12'
-      - run: pip install -r requirements.txt
-      - run: python -m playwright install --with-deps chromium
-      - run: python check_links.py
-      - name: Downloadable report
+
+      - name: Install packages
+        run: |
+          pip install -r requirements.txt
+          pip install reportlab
+
+      - name: Install browser
+        run: python -m playwright install --with-deps chromium
+
+      - name: Check website links
+        id: scan
+        continue-on-error: true
+        run: python check_links.py
+
+      - name: Generate PDF and email report
+        if: always()
+        env:
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          REPORT_TO: ${{ secrets.REPORT_TO }}
+          SCAN_OUTCOME: ${{ steps.scan.outcome }}
+        run: python report_email.py
+
+      - name: Save downloadable reports
         if: always()
         uses: actions/upload-artifact@v4
         with:
           name: link-report
           path: reports/
           retention-days: 2
+
+      - name: Preserve scan failure status
+        if: always() && steps.scan.outcome != 'success'
+        run: exit 1
