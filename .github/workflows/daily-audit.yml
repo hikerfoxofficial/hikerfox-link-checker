@@ -1,0 +1,67 @@
+name: Hikerfox daily website audit
+
+on:
+  schedule:
+    # 02:43 UTC = 08:13 AM India time.
+    # GitHub may delay scheduled runs.
+    - cron: '43 2 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: hikerfox-daily-audit
+  cancel-in-progress: false
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+
+    steps:
+      - name: Download repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install daily audit packages
+        run: pip install playwright reportlab
+
+      - name: Install Chromium
+        run: python -m playwright install --with-deps chromium
+
+      - name: Restore previous comparison baseline
+        uses: actions/cache/restore@v4
+        with:
+          path: daily-state/
+          key: daily-audit-v1-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            daily-audit-v1-
+
+      - name: Run daily audit and email report
+        id: audit
+        env:
+          SMTP_USERNAME: ${{ secrets.SMTP_USERNAME }}
+          SMTP_PASSWORD: ${{ secrets.SMTP_PASSWORD }}
+          REPORT_TO: ${{ secrets.REPORT_TO }}
+        run: python daily_audit.py
+
+      - name: Save comparison baseline
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: daily-state/
+          key: daily-audit-v1-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Save reports screenshots and HTML snapshots
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: daily-website-audit
+          path: daily-reports/
+          if-no-files-found: warn
+          retention-days: 7
